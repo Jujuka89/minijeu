@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mini Ville – vraie carte</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<style>
+html,body{height:100%;margin:0;font-family:system-ui,-apple-system,"Segoe UI",sans-serif}
+body{display:flex;flex-direction:column}
+.bar{display:flex;gap:8px;flex-wrap:wrap;align-items:center;padding:8px 10px;background:#1f2937;color:#fff;font-size:.9rem}
+.bar input{padding:6px 8px;border-radius:6px;border:0;min-width:160px}
+.bar button{padding:6px 10px;border-radius:6px;border:0;background:#3b82f6;color:#fff;cursor:pointer}
+.stat{background:#374151;border-radius:8px;padding:4px 10px}
+#map{flex:1}
+#start{position:fixed;left:50%;bottom:20px;transform:translateX(-50%);z-index:1000;background:#fff;color:#111;border-radius:12px;padding:12px 16px;box-shadow:0 6px 24px #0005;width:min(320px,90%);font-size:.92rem}
+#start button.go{width:100%;margin-top:8px;padding:8px;border:0;border-radius:8px;background:#3b82f6;color:#fff;cursor:pointer}
+#start input[type=range]{width:100%}
+.hidden{display:none}
+#msg{position:fixed;left:10px;bottom:10px;z-index:900;background:#000a;color:#fff;border-radius:8px;padding:6px 10px;font-size:.85rem;max-width:60%}
+.menu button{display:block;width:100%;text-align:left;margin:3px 0;padding:6px 8px;border:1px solid #ccc;border-radius:6px;background:#fff;cursor:pointer}
+.menu button:disabled{opacity:.45;cursor:not-allowed}
+.ico{font-size:20px;text-align:center;line-height:24px}
+</style>
+</head>
+<body>
+<div class="bar">
+<b>🏘️ Mini Ville</b>
+<input id="q" placeholder="Ville ou adresse…" value="Saint-Lô">
+<button id="find">Aller</button>
+<button id="load">Charger les bâtiments ici</button>
+<span class="stat">💰 <b id="sMoney">0</b> €</span>
+<span class="stat">👥 <b id="sPop">0</b>/<span id="sCap">0</span></span>
+<span class="stat">😊 <b id="sHap">0</b> %</span>
+</div>
+<div id="map"></div>
+<div id="start">
+<b id="st">Étape 1 : choisis ta maison</b>
+<p id="stx" style="margin:6px 0">Zoome sur ton quartier, clique sur « Charger les bâtiments ici », puis clique sur un bâtiment.</p>
+<div id="setup" class="hidden">
+<label>Habitants : <b id="nVal">3</b></label>
+<input type="range" id="n" min="1" max="8" value="3">
+<button class="go" id="go">Commencer</button>
+</div>
+</div>
+<div id="msg" class="hidden"></div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script>
+var TYPES={
+maison:{e:"🏠",label:"Maison (+4 places)",cost:800,col:"#6b9be0"},
+ecole:{e:"🏫",label:"École",cost:1500,col:"#e0b24a"},
+commerce:{e:"🏪",label:"Commerce (+revenus)",cost:1000,col:"#d9776a"},
+hopital:{e:"🏥",label:"Hôpital",cost:2500,col:"#bbbbbb"},
+parc:{e:"🌳",label:"Parc",cost:600,col:"#4fb04f"}
+};
+var S={phase:"pick",money:5000,pop:0,pick:null};
+var B={};
+var $=function(i){return document.getElementById(i)};
+var map=L.map("map").setView([49.1157,-1.0905],17);
+L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png",{maxZoom:19,attribution:"© OpenStreetMap"}).addTo(map);
+var layer=L.layerGroup().addTo(map);
+var EMPTY={color:"#555",weight:1,fillColor:"#9a9a9a",fillOpacity:.55};
+
+function say(t,keep){var m=$("msg");m.textContent=t;m.classList.remove("hidden");clearTimeout(say.t);if(!keep)say.t=setTimeout(function(){m.classList.add("hidden")},4000)}
+function all(){return Object.keys(B).map(function(k){return B[k]})}
+function count(t){return all().filter(function(b){return b.type===t}).length}
+function capacity(){return all().reduce(function(a,b){return a+(b.home?8:b.type==="maison"?4:0)},0)}
+function happiness(){
+var p=Math.max(S.pop,1),need={ecole:Math.ceil(p/10),commerce:Math.ceil(p/8),hopital:p>=15?1:0,parc:Math.ceil(p/12)},s=0,n=0;
+for(var k in need){s+=need[k]>0?Math.min(1,count(k)/need[k]):1;n++}
+return Math.round(s/n*100);
+}
+function ui(){$("sMoney").textContent=Math.round(S.money);$("sPop").textContent=S.pop;$("sCap").textContent=capacity();$("sHap").textContent=happiness()}
+
+function icon(o,e){
+if(o.mark)layer.removeLayer(o.mark);
+o.mark=L.marker(o.poly.getBounds().getCenter(),{interactive:false,icon:L.divIcon({html:'<div class="ico">'+e+'</div>',className:"",iconSize:[24,24]})}).addTo(layer);
+}
+function setType(o,t){
+o.type=t;
+o.poly.setStyle({fillColor:TYPES[t].col,fillOpacity:.8,color:"#222",weight:1.5});
+icon(o,TYPES[t].e);
+}
+function setHome(o){
+o.home=true;o.type="maison";
+o.poly.setStyle({fillColor:"#2563eb",fillOpacity:.85,color:"#fff",weight:2});
+icon(o,"🏡");
+}
+function unsetHome(o){
+o.home=false;o.type="vide";o.poly.setStyle(EMPTY);
+if(o.mark){layer.removeLayer(o.mark);o.mark=null}
+}
+
+function onClick(o,ll){
+if(S.phase==="pick"){
+if(S.pick)unsetHome(S.pick);
+S.pick=o;setHome(o);
+$("st").textContent="Étape 2 : combien d’habitants ?";
+$("stx").textContent="Ta maison est choisie (en bleu).";
+$("setup").classList.remove("hidden");
+return;
+}
+if(o.type!=="vide"){say(o.home?"C’est ta maison.":"Ce bâtiment est déjà construit.");return}
+var d=document.createElement("div");d.className="menu";d.innerHTML="<b>Construire ici</b>";
+Object.keys(TYPES).forEach(function(k){
+var t=TYPES[k],b=document.createElement("button");
+b.textContent=t.e+" "+t.label+" — "+t.cost+" €";
+b.disabled=S.money<t.cost;
+b.onclick=function(){S.money-=t.cost;setType(o,k);map.closePopup();say(t.label.split(" (")[0]+" construit(e) !");ui()};
+d.appendChild(b);
+});
+L.popup({minWidth:220}).setLatLng(ll).setContent(d).openOn(map);
+}
+
+async function load(){
+if(map.getZoom()<16){say("Zoome un peu plus (niveau 16 ou plus) pour charger les bâtiments.");return}
+var b=map.getBounds();
+var q='[out:json][timeout:25];way["building"]('+[b.getSouth(),b.getWest(),b.getNorth(),b.getEast()].join(",")+');out geom;';
+say("Chargement des bâtiments…",true);
+try{
+var r=await fetch("https://overpass-api.de/api/interpreter",{method:"POST",body:"data="+encodeURIComponent(q)});
+var d=await r.json(),n=0;
+d.elements.slice(0,2500).forEach(function(e){
+if(B[e.id]||!e.geometry||e.geometry.length<3)return;
+var o={id:e.id,type:"vide",home:false,mark:null};
+o.poly=L.polygon(e.geometry.map(function(p){return[p.lat,p.lon]}),EMPTY).addTo(layer);
+o.poly.on("click",function(ev){L.DomEvent.stopPropagation(ev);onClick(o,ev.latlng)});
+B[e.id]=o;n++;
+});
+say(n+" bâtiments ajoutés.");
+}catch(err){say("Erreur de chargement (Overpass occupé ?). Réessaie dans quelques secondes.")}
+}
+
+async function find(){
+var v=$("q").value.trim();if(!v)return;
+try{
+var r=await fetch("https://nominatim.openstreetmap.org/search?format=json&limit=1&q="+encodeURIComponent(v));
+var d=await r.json();
+if(!d.length){say("Lieu introuvable.");return}
+map.setView([+d[0].lat,+d[0].lon],17);
+}catch(e){say("Recherche impossible.")}
+}
+
+$("n").oninput=function(){$("nVal").textContent=this.value};
+$("go").onclick=function(){S.pop=+$("n").value;S.phase="play";$("start").classList.add("hidden");say("Clique sur un bâtiment gris pour construire. Tu peux aussi charger d’autres zones.");ui()};
+$("find").onclick=find;
+$("q").onkeydown=function(e){if(e.key==="Enter")find()};
+$("load").onclick=load;
+
+setInterval(function(){
+if(S.phase!=="play")return;
+S.money+=S.pop*3+count("commerce")*40;
+var h=happiness();
+if(h>=60&&S.pop<capacity()&&Math.random()<.6)S.pop++;
+else if(h<30&&S.pop>1&&Math.random()<.3)S.pop--;
+ui();
+},3000);
+ui();
+map.whenReady(load);
+</script>
+</body>
+</html>
