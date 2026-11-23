@@ -21,6 +21,10 @@ body{display:flex;flex-direction:column;height:100vh;height:100dvh}
 .menu button{display:block;width:100%;text-align:left;margin:3px 0;padding:6px 8px;border:1px solid #ccc;border-radius:6px;background:#fff;cursor:pointer}
 .menu button:disabled{opacity:.45;cursor:not-allowed}
 .ico{font-size:20px;text-align:center;line-height:24px}
+#jobs{position:fixed;right:10px;top:56px;z-index:1100;background:#fff;color:#111;border-radius:12px;padding:10px 12px;box-shadow:0 6px 24px #0005;width:min(300px,90%);max-height:60vh;overflow:auto;font-size:.88rem}
+#jobs .row{display:flex;justify-content:space-between;align-items:center;gap:6px;padding:4px 0;border-bottom:1px solid #eee}
+#jobs button{padding:4px 8px;border:0;border-radius:6px;background:#3b82f6;color:#fff;cursor:pointer}
+#jobs .x{background:#999;float:right}
 </style>
 </head>
 <body>
@@ -32,6 +36,8 @@ body{display:flex;flex-direction:column;height:100vh;height:100dvh}
 <span class="stat">💰 <b id="sMoney">0</b> €</span>
 <span class="stat">👥 <b id="sPop">0</b>/<span id="sCap">0</span></span>
 <span class="stat">😊 <b id="sHap">0</b> %</span>
+<span class="stat">🧑‍💼 <b id="sJob">0</b> sans emploi</span>
+<button id="jobsBtn">💼 Emplois</button>
 </div>
 <div id="map"></div>
 <div id="start">
@@ -43,6 +49,7 @@ body{display:flex;flex-direction:column;height:100vh;height:100dvh}
 <button class="go" id="go">Commencer</button>
 </div>
 </div>
+<div id="jobs" class="hidden"></div>
 <div id="msg" class="hidden"></div>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
 <script>
@@ -55,7 +62,7 @@ commerce:{e:"🏪",label:"Commerce (+revenus)",cost:1000,col:"#d9776a"},
 hopital:{e:"🏥",label:"Hôpital",cost:2500,col:"#bbbbbb"},
 parc:{e:"🌳",label:"Parc",cost:600,col:"#4fb04f"}
 };
-var S={phase:"pick",money:5000,pop:0,pick:null};
+var S={phase:"pick",money:5000,pop:0,pick:null,people:[]};
 var B={};
 var $=function(i){return document.getElementById(i)};
 var map=L.map("map").setView([49.1157,-1.0905],17);
@@ -70,15 +77,17 @@ function capacity(){return all().reduce(function(a,b){return a+(b.home?8:b.type=
 function happiness(){
 var p=Math.max(S.pop,1),need={ecole:Math.ceil(p/10),commerce:Math.ceil(p/8),hopital:p>=15?1:0,parc:Math.ceil(p/12)},s=0,n=0;
 for(var k in need){s+=need[k]>0?Math.min(1,count(k)/need[k]):1;n++}
+s+=S.people.length?S.people.filter(function(x){return x.job}).length/S.people.length:1;n++;
 return Math.round(s/n*100);
 }
-function ui(){$("sMoney").textContent=Math.round(S.money);$("sPop").textContent=S.pop;$("sCap").textContent=capacity();$("sHap").textContent=happiness()}
+function ui(){$("sMoney").textContent=Math.round(S.money);$("sPop").textContent=S.pop;$("sCap").textContent=capacity();$("sHap").textContent=happiness();$("sJob").textContent=S.people.filter(function(x){return!x.job}).length;if(!$("jobs").classList.contains("hidden"))renderJobs()}
 
 function icon(o,e){
 if(o.mark)layer.removeLayer(o.mark);
 o.mark=L.marker(o.poly.getBounds().getCenter(),{interactive:false,icon:L.divIcon({html:'<div class="ico">'+e+'</div>',className:"",iconSize:[24,24]})}).addTo(layer);
 }
 function setType(o,t){
+o.jobs=(JOBS[t]?JOBS[t].t:[]).map(function(x){return{title:x,pay:JOBS[t].pay,worker:null,b:o}});
 o.type=t;
 o.poly.setStyle({fillColor:TYPES[t].col,fillOpacity:.8,color:"#222",weight:1.5});
 icon(o,TYPES[t].e);
@@ -102,13 +111,19 @@ $("stx").textContent="Ta maison est choisie (en bleu).";
 $("setup").classList.remove("hidden");
 return;
 }
-if(o.type!=="vide"){say(o.home?"C’est ta maison.":"Ce bâtiment est déjà construit.");return}
+if(o.type!=="vide"){
+if(o.home){say("C’est ta maison.");return}
+var js=o.jobs||[],f=js.filter(function(j){return j.worker}).length;
+var dd=document.createElement("div");dd.className="menu";
+dd.innerHTML="<b>"+TYPES[o.type].e+" "+TYPES[o.type].label.split(" (")[0]+"</b><br>"+(js.length?"Emplois pourvus : "+f+"/"+js.length:"Pas d’emploi proposé");
+if(js.length){var bb=document.createElement("button");bb.textContent="💼 Voir les offres";bb.onclick=function(){map.closePopup();showJobs()};dd.appendChild(bb)}
+L.popup({minWidth:200}).setLatLng(ll).setContent(dd).openOn(map);return}
 var d=document.createElement("div");d.className="menu";d.innerHTML="<b>Construire ici</b>";
 Object.keys(TYPES).forEach(function(k){
 var t=TYPES[k],b=document.createElement("button");
 b.textContent=t.e+" "+t.label+" — "+t.cost+" €";
 b.disabled=S.money<t.cost;
-b.onclick=function(){S.money-=t.cost;setType(o,k);map.closePopup();say(t.label.split(" (")[0]+" construit(e) !");ui()};
+b.onclick=function(){S.money-=t.cost;setType(o,k);map.closePopup();say(t.label.split(" (")[0]+" construit(e) !"+(o.jobs.length?" "+o.jobs.length+" emplois à pourvoir.":""));ui();if(o.jobs.length)showJobs()};
 d.appendChild(b);
 });
 L.popup({minWidth:220}).setLatLng(ll).setContent(d).openOn(map);
@@ -143,18 +158,52 @@ map.setView([+d[0].lat,+d[0].lon],17);
 }catch(e){say("Recherche impossible.")}
 }
 
+var NAMES=["Léa","Hugo","Emma","Louis","Jade","Lucas","Chloé","Nathan","Inès","Tom","Manon","Jules","Camille","Noah","Sarah","Paul"];
+var JOBS={
+ecole:{t:["Enseignant","Directeur","Surveillant","Cantinier"],pay:30},
+hopital:{t:["Médecin","Infirmier","Aide-soignant","Secrétaire médical","Infirmier","Médecin"],pay:50},
+commerce:{t:["Vendeur","Caissier","Gérant"],pay:25},
+parc:{t:["Jardinier"],pay:20}
+};
+function addPerson(){var i=S.people.length;S.people.push({name:NAMES[i%NAMES.length]+(i>=NAMES.length?" "+(Math.floor(i/NAMES.length)+1):""),job:null});S.pop=S.people.length}
+function removePerson(){var k=S.people.length-1;for(var i=0;i<S.people.length;i++)if(!S.people[i].job){k=i;break}var p=S.people.splice(k,1)[0];if(p&&p.job)p.job.worker=null;S.pop=S.people.length}
+function salaries(){return S.people.reduce(function(a,p){return a+(p.job?p.job.pay:0)},0)}
+function openJobs(){var r=[];all().forEach(function(b){(b.jobs||[]).forEach(function(j){if(!j.worker)r.push(j)})});return r}
+function showJobs(){$("jobs").classList.remove("hidden");renderJobs()}
+function renderJobs(){
+var p=$("jobs"),prev=$("who")?$("who").value:null;
+var un=S.people.filter(function(x){return!x.job}),oj=openJobs();
+var h="<button class='x' id='jx'>✕</button><b>💼 Offres d’emploi</b>";
+if(un.length)h+="<p>Qui postule ? <select id='who'>"+un.map(function(x){return"<option value='"+S.people.indexOf(x)+"'>"+x.name+"</option>"}).join("")+"</select></p>";
+else h+="<p>Tous tes habitants ont un emploi 🎉</p>";
+if(!oj.length)h+="<p>Aucune offre pour le moment. Construis des écoles, commerces, hôpitaux…</p>";
+p.innerHTML=h;
+$("jx").onclick=function(){p.classList.add("hidden")};
+if($("who")&&prev&&$("who").querySelector("option[value='"+prev+"']"))$("who").value=prev;
+oj.forEach(function(j){
+var r=document.createElement("div");r.className="row";
+r.innerHTML="<span>"+TYPES[j.b.type].e+" "+j.title+" <small>("+j.pay+" € d’impôts)</small></span>";
+if(un.length){var bt=document.createElement("button");bt.textContent="Postuler";
+bt.onclick=function(){var w=S.people[+$("who").value];if(!w||w.job||j.worker)return;w.job=j;j.worker=w;say(w.name+" est embauché(e) : "+j.title+" !");ui()};
+r.appendChild(bt)}
+p.appendChild(r);
+});
+var emp=S.people.filter(function(x){return x.job});
+if(emp.length){var e=document.createElement("div");e.innerHTML="<hr><b>Habitants employés</b><br>"+emp.map(function(x){return x.name+" — "+x.job.title}).join("<br>");p.appendChild(e)}
+}
+$("jobsBtn").onclick=showJobs;
 $("n").oninput=function(){$("nVal").textContent=this.value};
-$("go").onclick=function(){S.pop=+$("n").value;S.phase="play";$("start").classList.add("hidden");say("Clique sur un bâtiment gris pour construire. Tu peux aussi charger d’autres zones.");ui()};
+$("go").onclick=function(){for(var i=0;i<+$("n").value;i++)addPerson();S.phase="play";$("start").classList.add("hidden");say("Clique sur un bâtiment gris pour construire. Tu peux aussi charger d’autres zones.");ui()};
 $("find").onclick=find;
 $("q").onkeydown=function(e){if(e.key==="Enter")find()};
 $("load").onclick=load;
 
 setInterval(function(){
 if(S.phase!=="play")return;
-S.money+=S.pop*3+count("commerce")*40;
+S.money+=S.pop*2+count("commerce")*30+salaries();
 var h=happiness();
-if(h>=60&&S.pop<capacity()&&Math.random()<.6)S.pop++;
-else if(h<30&&S.pop>1&&Math.random()<.3)S.pop--;
+if(h>=60&&S.pop<capacity()&&Math.random()<.6)addPerson();
+else if(h<30&&S.pop>1&&Math.random()<.3)removePerson();
 ui();
 },3000);
 ui();
