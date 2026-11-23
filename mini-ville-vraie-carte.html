@@ -7,12 +7,12 @@
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
 <style>
 html,body{height:100%;margin:0;font-family:system-ui,-apple-system,"Segoe UI",sans-serif}
-body{display:flex;flex-direction:column}
+body{display:flex;flex-direction:column;height:100vh;height:100dvh}
 .bar{display:flex;gap:8px;flex-wrap:wrap;align-items:center;padding:8px 10px;background:#1f2937;color:#fff;font-size:.9rem}
 .bar input{padding:6px 8px;border-radius:6px;border:0;min-width:160px}
 .bar button{padding:6px 10px;border-radius:6px;border:0;background:#3b82f6;color:#fff;cursor:pointer}
 .stat{background:#374151;border-radius:8px;padding:4px 10px}
-#map{flex:1}
+#map{flex:1;min-height:320px;width:100%;background:#cfe3c0}
 #start{position:fixed;left:50%;bottom:20px;transform:translateX(-50%);z-index:1000;background:#fff;color:#111;border-radius:12px;padding:12px 16px;box-shadow:0 6px 24px #0005;width:min(320px,90%);font-size:.92rem}
 #start button.go{width:100%;margin-top:8px;padding:8px;border:0;border-radius:8px;background:#3b82f6;color:#fff;cursor:pointer}
 #start input[type=range]{width:100%}
@@ -46,6 +46,8 @@ body{display:flex;flex-direction:column}
 <div id="msg" class="hidden"></div>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
 <script>
+window.onerror=function(m,s,l){var d=document.getElementById("msg");d.textContent="Erreur : "+m+" (ligne "+l+")";d.classList.remove("hidden");d.style.maxWidth="95%"};
+if(typeof L==="undefined"){var d0=document.getElementById("msg");d0.textContent="Leaflet n’a pas pu se charger : vérifie la connexion ou un bloqueur de contenu.";d0.classList.remove("hidden");d0.style.maxWidth="95%";throw new Error("Leaflet manquant")}
 var TYPES={
 maison:{e:"🏠",label:"Maison (+4 places)",cost:800,col:"#6b9be0"},
 ecole:{e:"🏫",label:"École",cost:1500,col:"#e0b24a"},
